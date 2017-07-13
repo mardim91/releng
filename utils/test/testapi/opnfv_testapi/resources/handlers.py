@@ -101,21 +101,70 @@ class GenericApiHandler(web.RequestHandler):
     @web.asynchronous
     @gen.coroutine
     def _list(self, query=None, res_op=None, *args, **kwargs):
+        sort = kwargs.get('sort')
+        page = kwargs.get('page', 0)
+        last = kwargs.get('last', 0)
+        per_page = kwargs.get('per_page', 0)
         if query is None:
             query = {}
-        data = []
         cursor = self._eval_db(self.table, 'find', query)
-        if 'sort' in kwargs:
-            cursor = cursor.sort(kwargs.get('sort'))
-        if 'last' in kwargs:
-            cursor = cursor.limit(kwargs.get('last'))
+        records_count = yield cursor.count()
+        total_pages = self._calc_total_pages(records_count,
+                                             last,
+                                             page,
+                                             per_page)
+        pipelines = self._set_pipelines(query, sort, last, page, per_page)
+        cursor = self._eval_db(self.table,
+                               'aggregate',
+                               pipelines,
+                               allowDiskUse=True)
+        data = list()
         while (yield cursor.fetch_next):
             data.append(self.format_data(cursor.next_object()))
         if res_op is None:
             res = {self.table: data}
         else:
             res = res_op(data, *args)
+        if total_pages > 0:
+            res.update({
+                'pagination': {
+                    'current_page': kwargs.get('page'),
+                    'total_pages': total_pages
+                }
+            })
         self.finish_request(res)
+
+    @staticmethod
+    def _calc_total_pages(records_count, last, page, per_page):
+        records_nr = records_count
+        if (records_count > last) and (last > 0):
+            records_nr = last
+
+        total_pages = 0
+        if page > 0:
+            total_pages, remainder = divmod(records_nr, per_page)
+            if remainder > 0:
+                total_pages += 1
+        if page > total_pages:
+            raises.BadRequest(
+                'Request page > total_pages [{}]'.format(total_pages))
+        return total_pages
+
+    @staticmethod
+    def _set_pipelines(query, sort, last, page, per_page):
+        pipelines = list()
+        if query:
+            pipelines.append({'$match': query})
+        if sort:
+            pipelines.append({'$sort': sort})
+
+        if page > 0:
+            pipelines.append({'$skip': (page - 1) * per_page})
+            pipelines.append({'$limit': per_page})
+        elif last > 0:
+            pipelines.append({'$limit': last})
+
+        return pipelines
 
     @web.asynchronous
     @gen.coroutine

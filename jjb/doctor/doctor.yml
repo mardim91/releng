@@ -17,11 +17,9 @@
 
     installer:
         - apex:
-            slave-label: 'ool-virtual1'
-            pod: 'ool-virtual1'
+            slave-label: 'doctor-apex-verify'
         - fuel:
-            slave-label: 'ool-virtual2'
-            pod: 'ool-virtual2'
+            slave-label: 'doctor-fuel-verify'
         #- joid:
         #    slave-label: 'ool-virtual3'
         #    pod: 'ool-virtual3'
@@ -34,12 +32,25 @@
         - verify:
             profiler: 'none'
             auto-trigger-name: 'doctor-verify'
+            is-python: false
         - profiling:
             profiler: 'poc'
             auto-trigger-name: 'experimental'
+            is-python: false
+        - python-verify:
+            profiler: 'none'
+            auto-trigger-name: 'doctor-verify'
+            is-python: true
+
+    pod:
+        - arm-pod2:
+            slave-label: '{pod}'
+        - arm-pod3:
+            slave-label: '{pod}'
 
     jobs:
         - 'doctor-verify-{stream}'
+        - 'doctor-{task}-{installer}-{inspector}-{pod}-{stream}'
         - 'doctor-{task}-{installer}-{inspector}-{stream}'
 
 - job-template:
@@ -83,6 +94,32 @@
         - shell: "[ -e tests/run.sh ] && bash -n ./tests/run.sh"
 
 - job-template:
+    name: 'doctor-{task}-{installer}-{inspector}-{pod}-{stream}'
+
+    node: '{slave-label}'
+
+    disabled: '{obj:disabled}'
+
+    parameters:
+        - project-parameter:
+            project: '{project}'
+            branch: '{branch}'
+        - 'opnfv-build-ubuntu-defaults'
+
+    scm:
+        - git-scm-gerrit
+
+
+    triggers:
+        - '{auto-trigger-name}':
+            project: '{project}'
+            branch: '{branch}'
+
+    builders:
+        - shell: "[ -e tests/run.sh ] && bash -n ./tests/run.sh"
+
+
+- job-template:
     name: 'doctor-{task}-{installer}-{inspector}-{stream}'
 
     node: '{slave-label}'
@@ -115,7 +152,7 @@
             default: 'doctor-notification'
         - string:
             name: TESTCASE_OPTIONS
-            default: '-e INSPECTOR_TYPE={inspector} -e PROFILER_TYPE={profiler} -v $WORKSPACE:/home/opnfv/repos/doctor'
+            default: '-e INSPECTOR_TYPE={inspector} -e PROFILER_TYPE={profiler} -e PYTHON_ENABLE={is-python} -v $WORKSPACE:/home/opnfv/repos/doctor'
             description: 'Addtional parameters specific to test case(s)'
         # functest-parameter
         - string:

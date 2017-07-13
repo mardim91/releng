@@ -20,37 +20,51 @@ def thread_execute(method, *args, **kwargs):
 class MemCursor(object):
     def __init__(self, collection):
         self.collection = collection
-        self.count = len(self.collection)
+        self.length = len(self.collection)
         self.sorted = []
 
     def _is_next_exist(self):
-        return self.count != 0
+        return self.length != 0
 
     @property
     def fetch_next(self):
         return thread_execute(self._is_next_exist)
 
     def next_object(self):
-        self.count -= 1
+        self.length -= 1
         return self.collection.pop()
 
     def sort(self, key_or_list):
-        key = key_or_list[0][0]
-        if key_or_list[0][1] == -1:
-            reverse = True
-        else:
-            reverse = False
+        for k, v in key_or_list.iteritems():
+            if v == -1:
+                reverse = True
+            else:
+                reverse = False
 
-        if key_or_list is not None:
             self.collection = sorted(self.collection,
-                                     key=itemgetter(key), reverse=reverse)
+                                     key=itemgetter(k), reverse=reverse)
         return self
 
     def limit(self, limit):
         if limit != 0 and limit < len(self.collection):
-            self.collection = self.collection[0:limit]
-            self.count = limit
+            self.collection = self.collection[0: limit]
+            self.length = limit
         return self
+
+    def skip(self, skip):
+        if skip < self.length and (skip > 0):
+            self.collection = self.collection[self.length - skip: -1]
+            self.length -= skip
+        elif skip >= self.length:
+            self.collection = []
+            self.length = 0
+        return self
+
+    def _count(self):
+        return self.length
+
+    def count(self):
+        return thread_execute(self._count)
 
 
 class MemDb(object):
@@ -186,6 +200,27 @@ class MemDb(object):
 
     def find(self, *args):
         return MemCursor(self._find(*args))
+
+    def _aggregate(self, *args, **kwargs):
+        res = self.contents
+        print args
+        for arg in args[0]:
+            for k, v in arg.iteritems():
+                if k == '$match':
+                    res = self._find(v)
+        cursor = MemCursor(res)
+        for arg in args[0]:
+            for k, v in arg.iteritems():
+                if k == '$sort':
+                    cursor = cursor.sort(v)
+                elif k == '$skip':
+                    cursor = cursor.skip(v)
+                elif k == '$limit':
+                    cursor = cursor.limit(v)
+        return cursor
+
+    def aggregate(self, *args, **kwargs):
+        return self._aggregate(*args, **kwargs)
 
     def _update(self, spec, document, check_keys=True):
         updated = False

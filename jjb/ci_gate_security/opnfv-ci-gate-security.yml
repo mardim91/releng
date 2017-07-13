@@ -1,5 +1,6 @@
+# SPDX-license-identifier: Apache-2.0
 ########################
-# Job configuration for opnfv-lint
+# Job configuration for opnfv-anteater (security audit)
 ########################
 - project:
 
@@ -9,6 +10,7 @@
 
     jobs:
         - 'opnfv-security-audit-verify-{stream}'
+        - 'opnfv-security-audit-weekly-{stream}'
 
     stream:
         - master:
@@ -20,14 +22,42 @@
 # job templates
 ########################
 - job-template:
+    name: 'opnfv-security-audit-weekly-{stream}'
+
+    disabled: '{obj:disabled}'
+
+    parameters:
+        - label:
+            name: SLAVE_LABEL
+            default: 'ericsson-build3'
+            description: 'Slave label on Jenkins'
+        - project-parameter:
+            project: releng
+            branch: '{branch}'
+
+    triggers:
+        - timed: '@weekly'
+
+    builders:
+        - anteater-security-audit-weekly
+
+- job-template:
     name: 'opnfv-security-audit-verify-{stream}'
 
     disabled: '{obj:disabled}'
 
     parameters:
+        - label:
+            name: SLAVE_LABEL
+            default: 'ericsson-build3'
+            description: 'Slave label on Jenkins'
         - project-parameter:
             project: $GERRIT_PROJECT
             branch: '{branch}'
+        - string:
+            name: GIT_BASE
+            default: https://gerrit.opnfv.org/gerrit/$PROJECT
+            description: "Used for overriding the GIT URL coming from Global Jenkins configuration in case if the stuff is done on none-LF HW."
 
     scm:
         - git-scm-gerrit
@@ -47,59 +77,42 @@
                     comment-contains-value: 'reverify'
             projects:
               - project-compare-type: 'REG_EXP'
-                project-pattern: 'sandbox'
+                project-pattern: 'apex|armband|bamboo|barometer|bottlenecks|calipso|compass4nfv|conductor|cooper|cperf|daisy|doctor|dovetail|dpacc|enfv|escalator|fds|functest|octopus|pharos|releng|sandbox|yardstick'
                 branches:
                   - branch-compare-type: 'ANT'
                     branch-pattern: '**/{branch}'
                 file-paths:
                   - compare-type: ANT
-                    pattern: '**/*.py'
-          skip-vote:
-            successful: true
-            failed: true
-            unstable: true
-            notbuilt: true
+                    pattern: '**'
+            skip-vote:
+                successful: true
+                failed: true
+                unstable: true
+                notbuilt: true
 
     builders:
-        - security-audit-python-code
+        - anteater-security-audit
         - report-security-audit-result-to-gerrit
 ########################
 # builder macros
 ########################
 - builder:
-    name: security-audit-python-code
+    name: anteater-security-audit
     builders:
-        - shell: |
-            #!/bin/bash
-            set -o errexit
-            set -o pipefail
-            set -o xtrace
-            export PATH=$PATH:/usr/local/bin/
+        - shell:
+            !include-raw: ./anteater-security-audit.sh
 
-            # this is where the security/license audit script will be executed
-            echo "Hello World!"
 - builder:
     name: report-security-audit-result-to-gerrit
     builders:
-        - shell: |
-            #!/bin/bash
-            set -o errexit
-            set -o pipefail
-            set -o xtrace
-            export PATH=$PATH:/usr/local/bin/
+        - shell:
+            !include-raw: ./anteater-report-to-gerrit.sh
 
-            # If no violations were found, no lint log will exist.
-            if [[ -e securityaudit.log ]] ; then
-                echo -e "\nposting security audit report to gerrit...\n"
+- builder:
+    name: anteater-security-audit-weekly
+    builders:
+        - shell:
+            !include-raw:
+                - ./anteater-clone-all-repos.sh
+                - ./anteater-security-audit-weekly.sh
 
-                cat securityaudit.log
-                echo
-
-                ssh -p 29418 gerrit.opnfv.org \
-                    "gerrit review -p $GERRIT_PROJECT \
-                     -m \"$(cat securityaudit.log)\" \
-                     $GERRIT_PATCHSET_REVISION \
-                     --notify NONE"
-
-                exit 1
-            fi

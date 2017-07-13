@@ -115,7 +115,6 @@
         - shell: |
             pwd
             cd src
-            ./install_build_deps.sh
             make clobber
             make
 
@@ -135,6 +134,8 @@
         - project-parameter:
             project: '{project}'
             branch: '{branch}'
+        - barometer-project-parameter:
+            gs-pathname: '{gs-pathname}'
         - 'opnfv-build-centos-defaults'
 
     scm:
@@ -144,8 +145,18 @@
          - timed: '@midnight'
 
     builders:
-        - shell: |
-            pwd
-            cd ci
-            ./install_dependencies.sh
-            ./build_rpm.sh
+        - shell:
+            !include-raw-escape: ./barometer-build.sh
+        - shell:
+            !include-raw-escape: ./barometer-upload-artifact.sh
+
+########################
+# parameter macros
+########################
+- parameter:
+    name: barometer-project-parameter
+    parameters:
+        - string:
+            name: GS_URL
+            default: '$GS_BASE{gs-pathname}'
+            description: "URL to Google Storage."

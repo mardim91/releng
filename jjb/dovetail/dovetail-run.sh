@@ -1,4 +1,11 @@
 #!/bin/bash
+##############################################################################
+# Copyright (c) 2017 Huawei Technologies Co.,Ltd and others.
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of the Apache License, Version 2.0
+# which accompanies this distribution, and is available at
+# http://www.apache.org/licenses/LICENSE-2.0
+##############################################################################
 
 #the noun INSTALLER is used in community, here is just the example to run.
 #multi-platforms are supported.
@@ -7,14 +14,12 @@ set -e
 [[ $CI_DEBUG == true ]] && redirect="/dev/stdout" || redirect="/dev/null"
 
 DOVETAIL_HOME=${WORKSPACE}/cvp
-if [ -d ${DOVETAIL_HOME} ]; then
-    sudo rm -rf ${DOVETAIL_HOME}/*
-else
-    sudo mkdir -p ${DOVETAIL_HOME}
-fi
+[ -d ${DOVETAIL_HOME} ] && sudo rm -rf ${DOVETAIL_HOME}
+
+mkdir -p ${DOVETAIL_HOME}
 
 DOVETAIL_CONFIG=${DOVETAIL_HOME}/pre_config
-sudo mkdir -p ${DOVETAIL_CONFIG}
+mkdir -p ${DOVETAIL_CONFIG}
 
 sshkey=""
 # The path of openrc.sh is defined in fetch_os_creds.sh
@@ -47,7 +52,12 @@ releng_repo=${WORKSPACE}/releng
 git clone https://gerrit.opnfv.org/gerrit/releng ${releng_repo} >/dev/null
 
 if [[ ${INSTALLER_TYPE} != 'joid' ]]; then
-    sudo /bin/bash ${releng_repo}/utils/fetch_os_creds.sh -d ${OPENRC} -i ${INSTALLER_TYPE} -a ${INSTALLER_IP} >${redirect}
+    echo "SUT branch is $SUT_BRANCH"
+    echo "dovetail branch is $BRANCH"
+    BRANCH_BACKUP=$BRANCH
+    export BRANCH=$SUT_BRANCH
+    ${releng_repo}/utils/fetch_os_creds.sh -d ${OPENRC} -i ${INSTALLER_TYPE} -a ${INSTALLER_IP} >${redirect}
+    export BRANCH=$BRANCH_BACKUP
 fi
 
 if [[ -f $OPENRC ]]; then
@@ -58,6 +68,8 @@ else
     sudo ls -al ${DOVETAIL_CONFIG}
     exit 1
 fi
+
+set +e
 
 sudo pip install virtualenv
 
@@ -83,6 +95,8 @@ ${cmd}
 
 deactivate
 
+set -e
+
 cd ${WORKSPACE}
 
 if [ -f ${DOVETAIL_CONFIG}/pod.yaml ]; then
@@ -102,7 +116,8 @@ if [ "$INSTALLER_TYPE" == "fuel" ]; then
 fi
 
 # sdnvpn test case needs to download this image first before running
-sudo wget -nc http://artifacts.opnfv.org/sdnvpn/ubuntu-16.04-server-cloudimg-amd64-disk1.img -P ${DOVETAIL_CONFIG}
+echo "Download image ubuntu-16.04-server-cloudimg-amd64-disk1.img ..."
+wget -q -nc http://artifacts.opnfv.org/sdnvpn/ubuntu-16.04-server-cloudimg-amd64-disk1.img -P ${DOVETAIL_CONFIG}
 
 opts="--privileged=true -id"
 

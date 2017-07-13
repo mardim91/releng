@@ -12,8 +12,9 @@ set -o nounset
 set -o pipefail
 
 usage() {
-    echo "usage: $0 [-v] -d <destination> -i <installer_type> -a <installer_ip>" >&2
+    echo "usage: $0 [-v] -d <destination> -i <installer_type> -a <installer_ip> [-s <ssh_key>]" >&2
     echo "[-v] Virtualized deployment" >&2
+    echo "[-s <ssh_key>] Path to ssh key. For MCP deployments only" >&2
 }
 
 info ()  {
@@ -53,11 +54,12 @@ swap_to_public() {
 : ${DEPLOY_TYPE:=''}
 
 #Get options
-while getopts ":d:i:a:h:v" optchar; do
+while getopts ":d:i:a:h:s:v" optchar; do
     case "${optchar}" in
         d) dest_path=${OPTARG} ;;
         i) installer_type=${OPTARG} ;;
         a) installer_ip=${OPTARG} ;;
+        s) ssh_key=${OPTARG} ;;
         v) DEPLOY_TYPE="virt" ;;
         *) echo "Non-option argument: '-${OPTARG}'" >&2
            usage
@@ -70,6 +72,9 @@ done
 dest_path=${dest_path:-$HOME/opnfv-openrc.sh}
 installer_type=${installer_type:-$INSTALLER_TYPE}
 installer_ip=${installer_ip:-$INSTALLER_IP}
+if [ "${installer_type}" == "fuel" ] && [ "${BRANCH}" == "master" ]; then
+    installer_ip=${SALT_MASTER_IP}
+fi
 
 if [ -z $dest_path ] || [ -z $installer_type ] || [ -z $installer_ip ]; then
     usage
@@ -89,40 +94,45 @@ ssh_options="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 # Start fetching the files
 if [ "$installer_type" == "fuel" ]; then
-    #ip_fuel="10.20.0.2"
     verify_connectivity $installer_ip
+    if [ "${BRANCH}" == "master" ]; then
+        ssh_key=${ssh_key:-$SSH_KEY}
+        if [ -z $ssh_key ] || [ ! -f $ssh_key ]; then
+            error "Please provide path to existing ssh key for mcp deployment."
+            exit 2
+        fi
+        ssh_options+=" -i ${ssh_key}"
 
-    env=$(sshpass -p r00tme ssh 2>/dev/null $ssh_options root@${installer_ip} \
-        'fuel env'|grep operational|head -1|awk '{print $1}') &> /dev/null
-    if [ -z $env ]; then
-        error "No operational environment detected in Fuel"
+        # retrieving controller vip
+        controller_ip=$(ssh 2>/dev/null ${ssh_options} ubuntu@${installer_ip} \
+            "sudo salt --out txt 'ctl01*' pillar.get _param:openstack_control_address | awk '{print \$2}'" | \
+            sed 's/ //g') &> /dev/null
+
+        info "Fetching rc file from controller $controller_ip..."
+        ssh ${ssh_options} ubuntu@${controller_ip} "sudo cat /root/keystonercv3" > $dest_path
+    else
+        #ip_fuel="10.20.0.2"
+        env=$(sshpass -p r00tme ssh 2>/dev/null ${ssh_options} root@${installer_ip} \
+            'fuel env'|grep operational|head -1|awk '{print $1}') &> /dev/null
+        if [ -z $env ]; then
+            error "No operational environment detected in Fuel"
+        fi
+        env_id="${FUEL_ENV:-$env}"
+
+        # Check if controller is alive (online='True')
+        controller_ip=$(sshpass -p r00tme ssh 2>/dev/null ${ssh_options} root@${installer_ip} \
+            "fuel node --env ${env_id} | grep controller | grep 'True\|  1' | awk -F\| '{print \$5}' | head -1" | \
+            sed 's/ //g') &> /dev/null
+
+        if [ -z $controller_ip ]; then
+            error "The controller $controller_ip is not up. Please check that the POD is correctly deployed."
+        fi
+
+        info "Fetching rc file from controller $controller_ip..."
+        sshpass -p r00tme ssh 2>/dev/null ${ssh_options} root@${installer_ip} \
+            "scp ${ssh_options} ${controller_ip}:/root/openrc ." &> /dev/null
+        sshpass -p r00tme scp 2>/dev/null ${ssh_options} root@${installer_ip}:~/openrc $dest_path &> /dev/null
     fi
-    env_id="${FUEL_ENV:-$env}"
-
-    # Check if controller is alive (online='True')
-    controller_ip=$(sshpass -p r00tme ssh 2>/dev/null $ssh_options root@${installer_ip} \
-        "fuel node --env ${env_id} | grep controller | grep 'True\|  1' | awk -F\| '{print \$5}' | head -1" | \
-        sed 's/ //g') &> /dev/null
-
-    if [ -z $controller_ip ]; then
-        error "The controller $controller_ip is not up. Please check that the POD is correctly deployed."
-    fi
-
-    info "Fetching rc file from controller $controller_ip..."
-    sshpass -p r00tme ssh 2>/dev/null $ssh_options root@${installer_ip} \
-        "scp $ssh_options ${controller_ip}:/root/openrc ." &> /dev/null
-    sshpass -p r00tme scp 2>/dev/null $ssh_options root@${installer_ip}:~/openrc $dest_path &> /dev/null
-
-    #This file contains the mgmt keystone API, we need the public one for our rc file
-    admin_ip=$(cat $dest_path | grep "OS_AUTH_URL" | sed 's/^.*\=//' | sed "s/^\([\"']\)\(.*\)\1\$/\2/g" | sed s'/\/$//')
-    public_ip=$(sshpass -p r00tme ssh $ssh_options root@${installer_ip} \
-        "ssh ${controller_ip} 'source openrc; openstack endpoint list'" \
-        | grep keystone | grep public | sed 's/ /\n/g' | grep ^http | head -1) &> /dev/null
-        #| grep http | head -1 | cut -d '|' -f 4 | sed 's/v1\/.*/v1\//' | sed 's/ //g') &> /dev/null
-    #NOTE: this is super ugly sed 's/v1\/.*/v1\//'OS_AUTH_URL
-    # but sometimes the output of endpoint-list is like this: http://172.30.9.70:8004/v1/%(tenant_id)s
-    # Fuel virtual need a fix
-
     #convert to v3 URL
     auth_url=$(cat $dest_path|grep AUTH_URL)
     if [[ -z `echo $auth_url |grep v3` ]]; then
@@ -143,36 +153,40 @@ elif [ "$installer_type" == "apex" ]; then
     sudo scp $ssh_options root@$installer_ip:/home/stack/overcloudrc.v3 $dest_path
 
 elif [ "$installer_type" == "compass" ]; then
-    verify_connectivity $installer_ip
-    controller_ip=$(sshpass -p'root' ssh 2>/dev/null $ssh_options root@${installer_ip} \
-        'mysql -ucompass -pcompass -Dcompass -e"select *  from cluster;"' \
-        | awk -F"," '{for(i=1;i<NF;i++)if($i~/\"127.0.0.1\"/) {print $(i+2);break;}}'  \
-        | grep -oP "\d+.\d+.\d+.\d+")
-
-    if [ -z $controller_ip ]; then
-        error "The controller $controller_ip is not up. Please check that the POD is correctly deployed."
-    fi
-
-    info "Fetching rc file from controller $controller_ip..."
-    sshpass -p root ssh 2>/dev/null $ssh_options root@${installer_ip} \
-        "scp $ssh_options ${controller_ip}:/opt/admin-openrc.sh ." &> /dev/null
-    sshpass -p root scp 2>/dev/null $ssh_options root@${installer_ip}:~/admin-openrc.sh $dest_path &> /dev/null
-
-    info "This file contains the mgmt keystone API, we need the public one for our rc file"
-
-    if grep "OS_AUTH_URL.*v2" $dest_path > /dev/null 2>&1 ; then
-        public_ip=$(sshpass -p root ssh $ssh_options root@${installer_ip} \
-            "ssh ${controller_ip} 'source /opt/admin-openrc.sh; openstack endpoint show identity '" \
-            | grep publicurl | awk '{print $4}')
+    if [ "${BRANCH}" == "master" ]; then
+        sudo docker cp compass-tasks:/opt/openrc $dest_path &> /dev/null
+        sudo chown $(whoami):$(whoami) $dest_path
     else
-        public_ip=$(sshpass -p root ssh $ssh_options root@${installer_ip} \
-            "ssh ${controller_ip} 'source /opt/admin-openrc.sh; \
-                 openstack endpoint list --interface public --service identity '" \
-            | grep identity | awk '{print $14}')
-    fi
-    info "public_ip: $public_ip"
-    swap_to_public $public_ip
+        verify_connectivity $installer_ip
+        controller_ip=$(sshpass -p'root' ssh 2>/dev/null $ssh_options root@${installer_ip} \
+            'mysql -ucompass -pcompass -Dcompass -e"select *  from cluster;"' \
+            | awk -F"," '{for(i=1;i<NF;i++)if($i~/\"127.0.0.1\"/) {print $(i+2);break;}}'  \
+            | grep -oP "\d+.\d+.\d+.\d+")
 
+        if [ -z $controller_ip ]; then
+            error "The controller $controller_ip is not up. Please check that the POD is correctly deployed."
+        fi
+
+        info "Fetching rc file from controller $controller_ip..."
+        sshpass -p root ssh 2>/dev/null $ssh_options root@${installer_ip} \
+            "scp $ssh_options ${controller_ip}:/opt/admin-openrc.sh ." &> /dev/null
+        sshpass -p root scp 2>/dev/null $ssh_options root@${installer_ip}:~/admin-openrc.sh $dest_path &> /dev/null
+
+        info "This file contains the mgmt keystone API, we need the public one for our rc file"
+
+        if grep "OS_AUTH_URL.*v2" $dest_path > /dev/null 2>&1 ; then
+            public_ip=$(sshpass -p root ssh $ssh_options root@${installer_ip} \
+                "ssh ${controller_ip} 'source /opt/admin-openrc.sh; openstack endpoint show identity '" \
+                | grep publicurl | awk '{print $4}')
+        else
+            public_ip=$(sshpass -p root ssh $ssh_options root@${installer_ip} \
+                "ssh ${controller_ip} 'source /opt/admin-openrc.sh; \
+                     openstack endpoint list --interface public --service identity '" \
+                | grep identity | awk '{print $14}')
+        fi
+        info "public_ip: $public_ip"
+        swap_to_public $public_ip
+    fi
 
 elif [ "$installer_type" == "joid" ]; then
     # do nothing...for the moment
