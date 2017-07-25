@@ -100,8 +100,8 @@
   version: 93913b6af52bbf55d224b1b0b8ce53e3a8c84398
 - name: os_neutron
   scm: git
-  src: https://git.openstack.org/openstack/openstack-ansible-os_neutron
-  version: e1bb52ff0a67fd34df2c2182c9d37cab88fb4d8e
+  src: https://github.com/manuelbuil/openstack-ansible-os_neutron
+  version: ocata-backport 
 - name: os_nova
   scm: git
   src: https://git.openstack.org/openstack/openstack-ansible-os_nova
@@ -186,3 +186,7 @@
   scm: git
   src: https://github.com/ceph/ansible-ceph-osd
   version: v2.2.4
+- name: opendaylight
+  scm: git
+  src: https://git.opendaylight.org/gerrit/p/integration/packaging/ansible-opendaylight.git
+  version: bdda0786326a2b2598210e930d2b686eb14696bc

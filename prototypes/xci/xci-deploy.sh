@@ -201,7 +201,9 @@ echo "Info: Database cluster verification successful!"
 #-------------------------------------------------------------------------------
 echo "Info: Installing OpenStack on target hosts"
 echo "-----------------------------------------------------------------------"
-ssh root@$OPNFV_HOST_IP "openstack-ansible \
+ssh root@$OPNFV_HOST_IP \
+     "ANSIBLE_ROLES_PATH=/etc/ansible/roles:$OPENSTACK_OSA_PATH/playbooks/roles \
+     openstack-ansible \
      $OPENSTACK_OSA_PATH/playbooks/setup-openstack.yml" | \
      tee $LOG_PATH/opnfv-setup-openstack.log
 echo "-----------------------------------------------------------------------"
