@@ -190,3 +190,7 @@
   scm: git
   src: https://git.opendaylight.org/gerrit/p/integration/packaging/ansible-opendaylight.git
   version: bdda0786326a2b2598210e930d2b686eb14696bc
+- name: os_tacker
+  scm: git
+  src: git://git.openstack.org/openstack/openstack-ansible-os_tacker 
+  version: master
