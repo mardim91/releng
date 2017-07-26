@@ -27,11 +27,13 @@ haproxy_keepalived_external_interface: br-vlan
 haproxy_keepalived_internal_interface: br-mgmt
 gnocchi_db_sync_options: ""
 
+ovs_nsh_support: true
+
 # Ensure the openvswitch kernel module is loaded
-openstack_host_specific_kernel_modules:
-  - name: "openvswitch"
-    pattern: "CONFIG_OPENVSWITCH"
-    group: "network_hosts"
+#openstack_host_specific_kernel_modules:
+#  - name: "openvswitch"
+#    pattern: "CONFIG_OPENVSWITCH"
+#    group: "network_hosts"
 
 # Use OpenDaylight SDN Controller
 neutron_plugin_type: "ml2.opendaylight"
