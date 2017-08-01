@@ -100,8 +100,8 @@
   version: 93913b6af52bbf55d224b1b0b8ce53e3a8c84398
 - name: os_neutron
   scm: git
-  src: https://github.com/mardim91/openstack-ansible-os_neutron
-  version: ocata-backport-odl-ovs-nsh 
+  src: https://github.com/manuelbuil/openstack-ansible-os_neutron 
+  version: ocata-backport
 - name: os_nova
   scm: git
   src: https://git.openstack.org/openstack/openstack-ansible-os_nova
