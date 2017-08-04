@@ -43,3 +43,8 @@ neutron_opendaylight_conf_ini_overrides:
     password: "admin"
     port_binding_controller: "pseudo-agentdb-binding"
     url: "http://{{ hostvars[groups['neutron_server'][0]]['ansible_eth1']['ipv4']['address'] }}:8080/controller/nb/v2/neutron"
+neutron_plugin_base:
+  - odl-router_v2
+  - metering
+  - networking_sfc.services.flowclassifier.plugin.FlowClassifierPlugin
+  - networking_sfc.services.sfc.plugin.SfcPlugin
