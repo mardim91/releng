@@ -47,3 +47,25 @@ neutron_plugin_base:
   - metering
   - networking_sfc.services.flowclassifier.plugin.FlowClassifierPlugin
   - networking_sfc.services.sfc.plugin.SfcPlugin
+
+haproxy_extra_services:
+  - service:
+      haproxy_service_name: opendaylight
+      haproxy_backend_nodes: "{{ groups['neutron_server'] | default([]) }}"
+      haproxy_bind: "{{ [internal_lb_vip_address] }}"
+      haproxy_port: 8081
+      haproxy_backend_port: 8181
+      haproxy_balance_type: tcp
+      haproxy_timeout_client: 5000s
+      haproxy_timeout_server: 5000s
+      haproxy_whitelist_networks: "{{ haproxy_galera_whitelist_networks }}"
+  - service:
+      haproxy_service_name: opendaylight-neutron
+      haproxy_backend_nodes: "{{ groups['neutron_server'] | default([]) }}"
+      haproxy_bind: "{{ [internal_lb_vip_address] }}"
+      haproxy_port: 8080
+      haproxy_balance_type: tcp
+      haproxy_timeout_client: 5000s
+      haproxy_timeout_server: 5000s
+      haproxy_whitelist_networks: "{{ haproxy_galera_whitelist_networks }}"
+
